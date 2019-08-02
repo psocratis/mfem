@@ -120,6 +120,12 @@ public:
     */
    void SetParameter(const std::string key, const std::string value);
 
+   /** Begins an I/O step */
+   void BeginStep();
+
+   /** Ends the current step, by default transports the data */
+   void EndStep();
+
 private:
    /** placeholder for engine name */
    const std::string name;

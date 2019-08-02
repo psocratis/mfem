@@ -8224,7 +8224,10 @@ void Mesh::Print(adios2stream &out) const
    io.DefineAttribute("vtk.xml", unstructuredData);
 
    // TODO track moving mesh
-   out.engine = io.Open(out.name, adios2::Mode::Write);
+   if(!out.engine)
+   {
+	   out.engine = io.Open(out.name, adios2::Mode::Write);
+   }
    adios2::Engine &engine = out.engine;
 
    engine.Put(varNumOfElements, static_cast<uint32_t>(NumOfElements));

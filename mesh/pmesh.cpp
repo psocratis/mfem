@@ -4068,9 +4068,6 @@ void ParMesh::Print(adios2stream &out) const
       ? io.DefineVariable<uint32_t>("types")
       : io.DefineVariable<uint32_t>("types", {}, {}, {nElements});
 
-   //solution
-   //io.DefineVariable<double>("sol", {}, {}, {static_cast<size_t>(NumOfVertices), static_cast<size_t>(Dim)});
-
    const std::string unstructuredData = R"( <?xml version="1.0"?>
            <VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">
              <UnstructuredGrid>
@@ -4092,12 +4089,11 @@ void ParMesh::Print(adios2stream &out) const
    io.DefineAttribute("vtk.xml", unstructuredData);
 
    // TODO track moving mesh
-   out.engine = io.Open(out.name, adios2::Mode::Write);
+   if(!out.engine)
+   {
+       out.engine = io.Open(out.name, adios2::Mode::Write);
+   }
    adios2::Engine &engine = out.engine;
-
-   //engine.BeginStep();
-   out.active_step = true;
-
    engine.Put(varNumOfElements, static_cast<uint32_t>(NumOfElements));
    engine.Put(varNumOfVertices, static_cast<uint32_t>(NumOfVertices));
 
@@ -4153,7 +4149,6 @@ void ParMesh::Print(adios2stream &out) const
 
    // collect spans and mesh Puts
    engine.PerformPuts();
-   //engine.EndStep(); //TODO remove
 }
 #endif
 

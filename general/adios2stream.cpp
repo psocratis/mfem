@@ -67,14 +67,12 @@ adios2stream::adios2stream(const std::string& name, const openmode mode,
 }
 #endif
 
-
 adios2stream::~adios2stream()
 {
 	if(engine){
 		engine.Close();
 	}
 }
-
 
 void adios2stream::SetParameters(
    const std::map<std::string, std::string>& parameters)
@@ -87,5 +85,24 @@ void adios2stream::SetParameter(const std::string key,
 {
    io.SetParameter(key, value);
 }
+
+void adios2stream::BeginStep()
+{
+	if(!engine)
+	{
+		engine = io.Open(name, adios2::Mode::Write);
+	}
+	engine.BeginStep();
+}
+
+void adios2stream::EndStep()
+{
+	if(!engine)
+	{
+		throw std::logic_error("MFEM adios2stream: calling EndStep on an empty step\n");
+	}
+	engine.EndStep();
+}
+
 
 }  // end namespace mfem
