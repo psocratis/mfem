@@ -426,19 +426,11 @@ int main(int argc, char *argv[])
    if(myid == 0){
       std::cout << "Using ADIOS2\n";
    }
-      adios2stream adios2output("ex10p.bp",
+         std::string postfix = std::string(mesh_file);
+         postfix = postfix.substr(postfix.find_last_of("/")+1);
+      adios2stream adios2output("ex10p_" + postfix + ".bp",
                                 adios2stream::openmode::out, MPI_COMM_WORLD);
-      // Commented out optional constructor for allowing adios2 runtime parameters (see below SetParameter)
-      // adios2stream adios2output("refined.mesh.solution.bp", adios2stream::openmode::out, MPI_COMM_WORLD, "adios2_config.xml", "ex1p");
-
-      //optimization parameters for running at scale, we can make them
-      //      const int procs2FilesRatio = 2;
-      //      adios2output.SetParameter("substreams",
-      //                                std::to_string(num_procs/procs2FilesRatio ));
-      //adios2output.SetParameter("CollectiveMetadata", "Off");
-      //in a transient problem with a fixed mesh, this is only needed once
       pmesh->Print(adios2output);
-      //in a transient problem with a fixed mesh, we save in "steps"
       w_gf.Save(adios2output, "w_gf");
 #endif
    }
