@@ -30,6 +30,16 @@
 #include <klu.h>
 #endif
 
+#ifdef MFEM_USE_SUPERLU
+#include "superlu.hpp"
+#include <vector>
+#endif
+
+#ifdef MFEM_USE_STRUMPACK
+#include "strumpack.hpp"
+#include <vector>
+#endif
+
 namespace mfem
 {
 
@@ -343,7 +353,7 @@ public:
 };
 
 
-#ifdef MFEM_USE_PETSC
+#ifdef MFEM_USE_STRUMPACK
 
 class GMGSolver : public Solver {
 private:
@@ -353,7 +363,9 @@ private:
    std::vector<HypreParMatrix *> P;
    std::vector<HypreSmoother  *> S;
    int NumGrids;
-   PetscLinearSolver *invAc = nullptr;
+   // PetscLinearSolver *invAc = nullptr;
+   STRUMPACKRowLocMatrix *SA = nullptr;
+   STRUMPACKSolver *invAc = nullptr;
    double theta = 1.0;
 public:
    GMGSolver(HypreParMatrix * Af_, std::vector<HypreParMatrix *> P_);
@@ -375,7 +387,9 @@ private:
    std::vector<HypreParMatrix *> P;
    std::vector<HypreSmoother  *> S;
    int NumGrids;
-   PetscLinearSolver *invAc = nullptr;
+   // PetscLinearSolver *invAc = nullptr;
+   STRUMPACKRowLocMatrix *SA = nullptr;
+   STRUMPACKSolver *invAc = nullptr;
    double theta = 1.0;
    mutable Array<int> block_OffsetsI;
    mutable Array<int> block_OffsetsJ;

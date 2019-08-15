@@ -1678,7 +1678,7 @@ slbqp_done:
 }
 
 
-#ifdef MFEM_USE_PETSC
+#ifdef MFEM_USE_SUPERLU
 GMGSolver::GMGSolver(HypreParMatrix * Af_,
                      std::vector<HypreParMatrix *> P_)
    : Solver(Af_->Height(), Af_->Width()), Af(Af_), P(P_) {
@@ -1695,9 +1695,18 @@ GMGSolver::GMGSolver(HypreParMatrix * Af_,
       // Put a check on check dimension of RAP (to do)
    }
    // Set up coarse solve operator
-   invAc = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
+   SA = new STRUMPACKRowLocMatrix(*A[0]);
+   invAc = new STRUMPACKSolver(*SA);
+   invAc->SetPrintFactorStatistics(false);
+   invAc->SetPrintSolveStatistics(false);
+   invAc->SetOperator(*SA);
+   invAc->SetKrylovSolver(strumpack::KrylovSolver::DIRECT);
+   invAc->SetReorderingStrategy(strumpack::ReorderingStrategy::METIS);
+   invAc->DisableMatching();
+
+   // invAc = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
    // Convert to PetscParMatrix
-   invAc->SetOperator(PetscParMatrix(A[0], Operator::PETSC_MATAIJ));
+   // invAc->SetOperator(PetscParMatrix(A[0], Operator::PETSC_MATAIJ));
    // construct smoothers
    for (int i = NumGrids - 1; i >= 0 ; i--)
    {
@@ -1744,6 +1753,7 @@ void GMGSolver::Mult(const Vector &r, Vector &z) const
       // Restrict
       P[i - 1]->MultTranspose(rv[i], rv[i - 1]);
    }
+
    // Coarse grid Stiffness matrix
    invAc->Mult(rv[0], zv[0]);
    //
@@ -1795,9 +1805,17 @@ ComplexGMGSolver::ComplexGMGSolver(ComplexHypreParMatrix * Af_,
                                            false, false, ComplexOperator::HERMITIAN);
    }
    // Set up coarse solve operator
-   invAc = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
-   // Convert to PetscParMatrix
-   invAc->SetOperator(PetscParMatrix(A[0]->GetSystemMatrix(), Operator::PETSC_MATAIJ));
+   SA = new STRUMPACKRowLocMatrix(*A[0]->GetSystemMatrix());
+   invAc = new STRUMPACKSolver(*SA);
+   invAc->SetPrintFactorStatistics(false);
+   invAc->SetPrintSolveStatistics(false);
+   invAc->SetOperator(*SA);
+   invAc->SetKrylovSolver(strumpack::KrylovSolver::DIRECT);
+   invAc->SetReorderingStrategy(strumpack::ReorderingStrategy::METIS);
+   invAc->DisableMatching();
+   // invAc = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
+   // // Convert to PetscParMatrix
+   // invAc->SetOperator(PetscParMatrix(A[0]->GetSystemMatrix(), Operator::PETSC_MATAIJ));
    // // construct smoothers
    for (int i = NumGrids - 1; i >= 0 ; i--)
    {

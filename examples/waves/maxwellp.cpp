@@ -20,9 +20,9 @@ using namespace mfem;
 
 // #define DEFINITE
 
-#ifndef MFEM_USE_PETSC
-#error This example requires that MFEM is built with MFEM_USE_PETSC=YES
-#endif
+// #ifndef MFEM_USE_PETSC
+// #error This example requires that MFEM is built with MFEM_USE_PETSC=YES
+// #endif
 
 // Define exact solution
 void E_exact_Re(const Vector & x, Vector & E);
@@ -35,7 +35,6 @@ void get_maxwell_solution_Im(const Vector & x, double E[], double curl2E[]);
 
 
 // Mesh Size
-Vector mesh_dim_(0); // x, y, z dimensions of mesh
 int dim;
 double omega;
 double complex_shift;
@@ -47,11 +46,9 @@ int main(int argc, char *argv[])
    StopWatch chrono;
 
    // 1. Initialise MPI
-   int num_procs, myid;
-   MPI_Init(&argc, &argv); // Initialise MPI
-   MPI_Comm_size(MPI_COMM_WORLD, &num_procs); //total number of processors available
-   MPI_Comm_rank(MPI_COMM_WORLD, &myid); // Determine process identifier
-
+   MPI_Session mpi(argc, argv);
+   // 1. Parse command-line options.
+   // geometry file
    const char *mesh_file = "../../data/one-hex.mesh";
    int order = 1;
    // number of wavelengths
@@ -64,6 +61,8 @@ int main(int argc, char *argv[])
    int initref = 1;
    // number of mg levels
    int maxref = 1;
+   // solver
+   int solver = 1;
    //
    complex_shift = 0.0;
 
@@ -84,33 +83,41 @@ int main(int argc, char *argv[])
                   "Number of Refinements.");   
    args.AddOption(&visualization, "-vis", "--visualization", "-no-vis",
                   "--no-visualization",
-                  "Enable or disable GLVis visualization.");                           
+                  "Enable or disable GLVis visualization."); 
+   args.AddOption(&solver, "-s", "--solver",
+                  "Solver: 1 - GMG-GMRES, 2 - PETSC, 3 - SUPERLU, 4 - STRUMPACK, 5-HSS-GMRES");                       
    args.Parse();
    // check if the inputs are correct
    if (!args.Good())
    {
-      if (myid == 0)
+      if ( mpi.Root() )
       {
          args.PrintUsage(cout);
       }
       MPI_Finalize();
       return 1;
    }
-   if (myid == 0)
+   if ( mpi.Root() )
    {
       args.PrintOptions(cout);
    }
 
+   enum SolverType
+   {
+      INVALID_SOL = -1,
+      GMG_GMRES   =  1,
+      PETSC       =  2,
+      SUPERLU     =  3,
+      STRUMPACK   =  4,
+      HSS_GMRES   =  5,
+   };
+
    // Angular frequency
    omega = 2.0*k*M_PI;
-
-// 2b. We initialize PETSc
-   MFEMInitializePetsc(NULL, NULL, petscrc_file, NULL);
 
    // Create serial mesh 
    Mesh *mesh = new Mesh(mesh_file, 1, 1);
    dim = mesh->Dimension();
-   int sdim = mesh->SpaceDimension();
 
    // 3. Executing uniform h-refinement
    for (int i = 0; i < initref; i++ )
@@ -184,38 +191,135 @@ int main(int argc, char *argv[])
    ComplexHypreParMatrix * AZ = Ah.As<ComplexHypreParMatrix>();
    HypreParMatrix * A = AZ->GetSystemMatrix();
 
-   if (myid == 0)
+   if ( mpi.Root() )
    {
       cout << "Size of fine grid system: "
            << A->GetGlobalNumRows() << " x " << A->GetGlobalNumCols() << endl;
    }
 
+   chrono.Clear();
+   chrono.Start();
+  
+   switch((SolverType)solver)
+   {
+      case GMG_GMRES: 
+      {
+         if(mpi.Root()) {cout<< "Solver choice: GMG_GMRES" << endl;}
+         // Initialize PETSc
+         // MFEMInitializePetsc(NULL, NULL, petscrc_file, NULL);
+         
+         ComplexGMGSolver M(AZ, P);
+         M.SetTheta(0.5);
+         M.SetSmootherType(HypreSmoother::Jacobi);
 
-   ComplexGMGSolver M(AZ, P);
-   M.SetTheta(0.5);
-   M.SetSmootherType(HypreSmoother::Jacobi);
+         int maxit(5000);
+         double rtol(1.e-6);
+         double atol(0.0);
+         X = 0.0;
+         GMRESSolver gmres(MPI_COMM_WORLD);
+         gmres.SetAbsTol(atol);
+         gmres.SetRelTol(rtol);
+         gmres.SetMaxIter(maxit);
+         gmres.SetOperator(*AZ);
+         gmres.SetPreconditioner(M);
+         gmres.SetPrintLevel(1);
+         gmres.Mult(B,X);
 
-   int maxit(5000);
-   double rtol(1.e-12);
-   double atol(0.0);
+         // MFEMFinalizePetsc();
+      }   
+         break;
+      case PETSC:
+          {
+         if(mpi.Root()) {cout<< "Solver choice: PETSC" << endl;}
+         // MFEMInitializePetsc(NULL, NULL, petscrc_file, NULL);
 
-   X = 0.0;
-   GMRESSolver gmres(MPI_COMM_WORLD);
-   gmres.SetAbsTol(atol);
-   gmres.SetRelTol(rtol);
-   gmres.SetMaxIter(maxit);
-   gmres.SetOperator(*AZ);
-   gmres.SetPreconditioner(M);
-   gmres.SetPrintLevel(1);
-   gmres.Mult(B, X);
+         // PetscLinearSolver * invA = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
+         // PetscParMatrix *PA = new PetscParMatrix(A, Operator::PETSC_MATAIJ);
+         // invA->SetOperator(*PA);
+         // invA->Mult(B,X);
+         // delete PA;
+         // MFEMFinalizePetsc();
+      }   
+         break;
+      case SUPERLU:
+      {
+         if(mpi.Root()) {cout<< "Solver choice: SuperLU" << endl;}
+         SuperLURowLocMatrix *SA = new SuperLURowLocMatrix(*A);
+         SuperLUSolver * superlu = new SuperLUSolver(MPI_COMM_WORLD);
+         // superlu->SetPrintStatistics(true);
+         // superlu->SetSymmetricPattern(false);
+         superlu->SetColumnPermutation(superlu::PARMETIS);
+         superlu->SetOperator(*SA);
+         superlu->Mult(B,X);
+         delete SA;
+         delete superlu;
+      }   
+         break;
+         case STRUMPACK:
+      {   
+         if(mpi.Root()) {cout<< "Solver choice: STRUMPACK" << endl;}
+         STRUMPACKRowLocMatrix *SA = new STRUMPACKRowLocMatrix(*A);
+         STRUMPACKSolver * strumpack = new STRUMPACKSolver(argc, argv, MPI_COMM_WORLD);
+         strumpack->SetPrintFactorStatistics(false);
+         strumpack->SetPrintSolveStatistics(true);
+         strumpack->SetHSS(true);
+         strumpack->SetHssAbsTol(0.0);
+         strumpack->SetHssRelTol(1e-4);
+         strumpack->SetAbsTol(0.0);
+         strumpack->SetRelTol(1e-6);
+         strumpack->SetKrylovSolver(strumpack::KrylovSolver::AUTO);
+         strumpack->SetReorderingStrategy(strumpack::ReorderingStrategy::METIS);
+         strumpack->DisableMatching();
+         strumpack->SetOperator(*SA);
+         strumpack->SetFromCommandLine();
+         strumpack->Mult(B, X);
+         delete SA;
+         delete strumpack;
+      }     
+         break  ;   
+      case HSS_GMRES:
+      {   
+         if(mpi.Root()) {cout<< "Solver choice: STRUMPACK" << endl;}
+         STRUMPACKRowLocMatrix *SA = new STRUMPACKRowLocMatrix(*A);
+         STRUMPACKSolver * prec = new STRUMPACKSolver(argc, argv, MPI_COMM_WORLD);
+         prec->SetPrintFactorStatistics(true);
+         prec->SetPrintSolveStatistics(false);
+         prec->SetHSS(true);
+         prec->SetHssAbsTol(0.0);
+         prec->SetHssRelTol(1e-4);
+         prec->SetKrylovSolver(strumpack::KrylovSolver::DIRECT);
+         prec->SetReorderingStrategy(strumpack::ReorderingStrategy::METIS);
+         prec->DisableMatching();
+         prec->SetOperator(*SA);
+         prec->SetFromCommandLine();
+         
+         int maxit(50);
+         double rtol(1.e-6);
+         double atol(0.0);
+         GMRESSolver gmres(MPI_COMM_WORLD);
+         gmres.SetAbsTol(atol);
+         gmres.SetRelTol(rtol);
+         gmres.SetMaxIter(maxit);
+         gmres.SetOperator(*A);
+         gmres.SetPreconditioner(*prec);
+         gmres.SetPrintLevel(1);
+         gmres.Mult(B,X);
 
+         delete SA;
+         delete prec;
 
-   // PetscLinearSolver * invA = new PetscLinearSolver(MPI_COMM_WORLD, "direct");
-   // invA->SetOperator(PetscParMatrix(A, Operator::PETSC_MATAIJ));
-   // invA->Mult(B,X);
+      }     
+         break  ;   
 
+      default: 
+         if(mpi.Root()) {cout<< "Solver choice not valid. Problem not solved" << endl;}
+   }
 
-
+   chrono.Stop();
+   if (mpi.Root())
+   {
+      cout << "Solver time: " << chrono.RealTime() << endl;
+   }
    a.RecoverFEMSolution(X,B,E_gf);
 
 
@@ -234,7 +338,7 @@ int main(int argc, char *argv[])
    double norm_E_Im = ComputeGlobalLpNorm(2, E_Im, *pmesh, irs);
 
 
-   if (myid == 0)
+   if (mpi.Root())
    {
       cout << " Real Part: || E_h - E || / ||E|| = " << L2Error_Re / norm_E_Re << '\n' << endl;
       cout << " Imag Part: || E_h - E || / ||E|| = " << L2Error_Im / norm_E_Im << '\n' << endl;
@@ -243,10 +347,12 @@ int main(int argc, char *argv[])
       cout << " Imag Part: || E_h - E || = " << L2Error_Im << '\n' << endl;
    }
 
-
    // visualization   
    if (visualization)
    {
+      int num_procs, myid;
+      MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+      MPI_Comm_rank(MPI_COMM_WORLD, &myid);
       char vishost[] = "localhost";
       int  visport   = 19916;
       socketstream sol_sock(vishost, visport);
@@ -260,14 +366,11 @@ int main(int argc, char *argv[])
       sol_sock_Im << "solution\n" << *pmesh << E_gf.imag() << "window_title 'Imaginary part'" << flush;
    }
 
-   // delete invA;
+   // // delete invA;
    delete fec;
    delete ND_fespace;
    delete pmesh;
-
-   MFEMFinalizePetsc();
-   MPI_Finalize();
-
+   return 0;
 }
 //define exact solution
 void E_exact_Re(const Vector &x, Vector &E)
